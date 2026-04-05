@@ -1,0 +1,45 @@
+name: medical-triage-env
+version: "0.1.0"
+description: >
+  Emergency department triage environment where LLM agents classify
+  patient urgency using the Emergency Severity Index (ESI 1-5).
+  Three patient cases from obvious STEMI to masked urosepsis in an
+  elderly patient on beta blockers. Graders are fully deterministic.
+  First medical triage environment on the OpenEnv Hub.
+author: "your-team-name"
+tags:
+  - openenv
+  - medical
+  - triage
+  - clinical
+  - healthcare
+  - esi
+  - real-world
+tasks:
+  - id: classic-mi
+    difficulty: easy
+    description: "Classic STEMI in a 58-year-old male"
+  - id: meningitis-suspect
+    difficulty: medium
+    description: "Suspected bacterial meningitis with non-blanching rash"
+  - id: masked-sepsis
+    difficulty: hard
+    description: "Urosepsis masked by beta blocker and CKD in 82-year-old"
+action_space:
+  type: structured_json
+  fields:
+    - {name: action_type, type: string, values: [classify, clarify]}
+    - {name: esi_level, type: integer, range: [1, 5]}
+    - {name: clarifying_question, type: string}
+    - {name: reasoning, type: string}
+    - {name: recommended_actions, type: "list[string]"}
+    - {name: confidence, type: float, range: [0.0, 1.0]}
+observation_space:
+  type: structured_json
+  fields:
+    - {name: task_id, type: string}
+    - {name: patient, type: PatientPresentation}
+    - {name: step_number, type: integer}
+    - {name: clarification_history, type: "list[string]"}
+    - {name: additional_info_revealed, type: boolean}
+reward_range: [0.0, 1.0]

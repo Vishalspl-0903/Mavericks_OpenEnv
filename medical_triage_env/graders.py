@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+from .logs import get_logger
 from .models import TriageAction, TriageReward
+
+logger = get_logger(__name__)
 
 STOPWORDS = {
     "a",
@@ -162,6 +165,13 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
 
     raw = esi_score + reasoning_score + action_score
     if undertriage_penalty:
+        logger.warning(
+            "undertriage_detected",
+            correct_esi=task["correct_esi"],
+            predicted_esi=action.esi_level,
+            task_id=task.get("task_id", "unknown"),
+            penalty_applied=True,
+        )
         raw = raw * 0.25
 
     final = round(min(max(raw, 0.0), 1.0), 2)

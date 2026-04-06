@@ -6,8 +6,11 @@ from typing import Dict, List, Optional, Tuple
 from fastapi import Body, FastAPI, HTTPException
 
 from .graders import grade
+from .logs import get_logger
 from .models import PatientPresentation, TriageAction, TriageObservation
 from .tasks import TASK_LIST, TASKS, get_next_task, get_task
+
+logger = get_logger(__name__)
 
 app = FastAPI(title="medical-triage-env", version="0.1.0")
 
@@ -65,6 +68,13 @@ class MedicalTriageEnv:
         self.clarification_history = []
         self.additional_info_revealed = False
         self.done = False
+        
+        logger.debug(
+            "env_reset",
+            task_id=self.current_task["task_id"],
+            max_steps=self.current_task["max_steps"],
+        )
+        
         return self.build_observation()
 
     def step(self, action: TriageAction) -> Tuple[TriageObservation, float, bool, dict]:
@@ -79,6 +89,13 @@ class MedicalTriageEnv:
         raw_reward = 0.0
         grader_result = None
         final_reward = 0.0
+        
+        logger.debug(
+            "env_step_start",
+            task_id=task["task_id"],
+            step=self.current_step,
+            action_type=action.action_type,
+        )
 
         if action.action_type == "clarify":
             if task.get("patient", {}).get("additional_info") and not self.additional_info_revealed:
@@ -113,6 +130,16 @@ class MedicalTriageEnv:
 
         self.episode_rewards.append(final_reward)
         next_obs = self.build_observation()
+        
+        logger.debug(
+            "env_step_end",
+            task_id=task["task_id"],
+            step=self.current_step,
+            reward=final_reward,
+            done=self.done,
+            cumulative_score=round(sum(self.episode_rewards), 2),
+        )
+        
         info = {
             "raw_score": raw_reward if action.action_type == "classify" else reward,
             "step": self.current_step,

@@ -439,6 +439,16 @@ def get_next_task(current_task_id: Optional[str]) -> TaskConfig:
     return _TASKS_CACHE[_TASK_LIST[next_index]]
 
 
+def load_all_tasks() -> tuple[Dict[str, TaskConfig], List[str]]:
+    """
+    Load all available tasks.
+    
+    Returns:
+        Tuple of (tasks_dict, task_ids_list)
+    """
+    return _TASKS_CACHE.copy(), _TASK_LIST.copy()
+
+
 # Backward compatibility exports for existing code
 TASK_LIST = _TASK_LIST
 TASKS: Dict[str, Dict[str, Any]] = {

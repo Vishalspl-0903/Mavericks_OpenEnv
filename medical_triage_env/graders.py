@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from .logs import get_logger
 from .models import TriageAction, TriageReward
+from .tasks import TaskConfig
 
 logger = get_logger(__name__)
 
@@ -183,3 +184,211 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
         action_appropriateness=action_score,
         feedback=feedback,
     )
+
+
+class TemporalGrader:
+    """Grades timing performance based on ESI urgency and steps taken."""
+    
+    @staticmethod
+    def score_temporal(esi_correct: int, steps_taken: int, expected_steps: int) -> float:
+        """
+        Score temporal performance with urgency-based penalties and bonuses.
+        
+        Args:
+            esi_correct: Correct ESI level (1-5)
+            steps_taken: Number of steps actually taken
+            expected_steps: Expected number of steps for this task
+            
+        Returns:
+            Temporal score between 0.0 and 1.0
+        """
+        base_score = 1.0
+        
+        # High urgency cases (ESI 1-2): penalize for taking too many steps
+        if esi_correct <= 2 and steps_taken > expected_steps + 1:
+            extra_steps = steps_taken - (expected_steps + 1)
+            penalty = 0.08 * extra_steps
+            base_score -= penalty
+            
+            logger.debug(
+                "temporal_penalty_applied",
+                esi=esi_correct,
+                steps_taken=steps_taken,
+                expected_steps=expected_steps,
+                extra_steps=extra_steps,
+                penalty=penalty
+            )
+        
+        # Low urgency cases (ESI 4-5): bonus for efficient triage  
+        elif esi_correct >= 4 and steps_taken < expected_steps - 1:
+            saved_steps = (expected_steps - 1) - steps_taken
+            bonus = 0.04 * saved_steps
+            base_score += bonus
+            
+            logger.debug(
+                "temporal_bonus_applied",
+                esi=esi_correct,
+                steps_taken=steps_taken,
+                expected_steps=expected_steps,
+                saved_steps=saved_steps,
+                bonus=bonus
+            )
+        
+        # Clamp to valid range
+        return max(0.0, min(1.0, base_score))
+
+
+class ReasoningPathGrader:
+    """Grades the reasoning path and clinical workflow quality."""
+    
+    @staticmethod
+    def score_reasoning(action_history: List[TriageAction], task: TaskConfig) -> float:
+        """
+        Score reasoning path quality based on clinical workflow.
+        
+        Args:
+            action_history: List of all actions taken during the episode
+            task: TaskConfig with expected workflow information
+            
+        Returns:
+            Reasoning path score between 0.0 and 1.0
+        """
+        score = 0.0
+        
+        # Check if agent asked for vitals before classifying (+0.2)
+        asked_for_vitals = any(
+            action.action_type == "clarify" and 
+            any(keyword in action.clarifying_question.lower() if action.clarifying_question else ""
+                for keyword in ["vital", "signs", "hr", "bp", "pulse", "temperature", "oxygen"])
+            for action in action_history
+        )
+        
+        if asked_for_vitals:
+            score += 0.2
+            logger.debug("reasoning_bonus_vitals_check", task_id=task.id)
+        
+        # Check if agent asked at least 1 relevant clarifying question (+0.3)
+        relevant_clarifications = 0
+        for action in action_history:
+            if action.action_type == "clarify" and action.clarifying_question:
+                # Check if this clarification matches any key clarify actions for this task
+                for key_clarify in task.key_clarify_actions:
+                    if key_clarify.lower() in action.clarifying_question.lower():
+                        relevant_clarifications += 1
+                        break
+        
+        if relevant_clarifications >= 1:
+            score += 0.3
+            logger.debug(
+                "reasoning_bonus_relevant_clarify", 
+                task_id=task.id,
+                count=relevant_clarifications
+            )
+        
+        # Check if agent flagged correct red-flag symptoms in reasoning (+0.3)
+        flagged_red_flags = False
+        for action in action_history:
+            if action.action_type == "classify" and action.reasoning:
+                reasoning_lower = action.reasoning.lower()
+                # Look for key clinical reasoning keywords that indicate red flags
+                key_matches = sum(1 for keyword in task.key_reasoning_keywords 
+                                if keyword.lower() in reasoning_lower)
+                if key_matches >= 2:  # At least 2 key reasoning concepts mentioned
+                    flagged_red_flags = True
+                    break
+        
+        if flagged_red_flags:
+            score += 0.3  
+            logger.debug("reasoning_bonus_red_flags", task_id=task.id)
+        
+        # Penalty for too many irrelevant clarifications (-0.2 if >2 irrelevant)
+        irrelevant_clarifications = 0
+        total_clarifications = sum(1 for action in action_history if action.action_type == "clarify")
+        
+        if total_clarifications > relevant_clarifications:
+            irrelevant_clarifications = total_clarifications - relevant_clarifications
+        
+        if irrelevant_clarifications > 2:
+            penalty = 0.2
+            score -= penalty
+            logger.debug(
+                "reasoning_penalty_irrelevant", 
+                task_id=task.id,
+                irrelevant_count=irrelevant_clarifications,
+                penalty=penalty
+            )
+        
+        # Clamp to valid range
+        return max(0.0, min(1.0, score))
+
+
+def compute_final_score(
+    action: TriageAction,
+    task: Dict[str, Any],
+    action_history: List[TriageAction],
+    esi_score: float,
+    steps_taken: int
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Compute final score combining all grading components.
+    
+    Args:
+        action: The final classification action
+        task: Task configuration dictionary  
+        action_history: Full history of actions taken
+        esi_score: ESI accuracy score
+        steps_taken: Number of steps taken
+        
+    Returns:
+        Tuple of (final_score, component_scores_dict)
+    """
+    # Convert dict task to TaskConfig for new graders
+    task_config = TaskConfig.model_validate(task)
+    
+    # Compute undertriage penalty factor (from existing logic)
+    undertriage_penalty_factor = 1.0
+    if task["correct_esi"] <= 2 and action.esi_level is not None and action.esi_level >= 4:
+        undertriage_penalty_factor = 0.25
+        logger.warning(
+            "undertriage_penalty_applied",
+            correct_esi=task["correct_esi"],
+            predicted_esi=action.esi_level,
+            task_id=task.get("task_id", "unknown")
+        )
+    
+    # Compute temporal score
+    temporal_grader = TemporalGrader()
+    temporal_score = temporal_grader.score_temporal(
+        esi_correct=task["correct_esi"],
+        steps_taken=steps_taken,
+        expected_steps=task.get("expected_clarify_steps", 2)
+    )
+    
+    # Compute reasoning path score
+    reasoning_grader = ReasoningPathGrader()
+    reasoning_score = reasoning_grader.score_reasoning(action_history, task_config)
+    
+    # Combine all components with specified weights
+    final_score = (
+        0.40 * esi_score +
+        0.25 * undertriage_penalty_factor * esi_score +  # Apply penalty as multiplicative factor
+        0.20 * temporal_score +
+        0.15 * reasoning_score
+    )
+    
+    # Component scores for transparency
+    component_scores = {
+        "esi_score": esi_score,
+        "undertriage_penalty_factor": undertriage_penalty_factor,
+        "temporal_score": temporal_score,
+        "reasoning_score": reasoning_score,
+        "final_score": round(max(0.0, min(1.0, final_score)), 2)
+    }
+    
+    logger.debug(
+        "final_score_computed",
+        task_id=task.get("task_id", "unknown"),
+        **component_scores
+    )
+    
+    return component_scores["final_score"], component_scores

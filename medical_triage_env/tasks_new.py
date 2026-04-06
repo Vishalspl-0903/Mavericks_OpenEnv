@@ -6,6 +6,7 @@ and provides cached access to task data.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .logs import get_logger
+from .models import VitalSigns
 
 logger = get_logger(__name__)
 
@@ -336,7 +338,7 @@ _TASKS_CACHE: Dict[str, TaskConfig] = {}
 _TASK_LIST: List[str] = []
 
 
-def _load_tasks_from_yaml() -> tuple[Dict[str, TaskConfig], List[str]]:
+def _load_tasks_from_yaml() -> Dict[str, TaskConfig]:
     """Load and validate tasks from YAML content."""
     try:
         # Try loading from external file first
@@ -441,7 +443,7 @@ def get_next_task(current_task_id: Optional[str]) -> TaskConfig:
 
 # Backward compatibility exports for existing code
 TASK_LIST = _TASK_LIST
-TASKS: Dict[str, Dict[str, Any]] = {
+TASKS = {
     task_id: {
         "task_id": config.id,
         "difficulty": config.difficulty,
@@ -472,4 +474,3 @@ TASKS: Dict[str, Dict[str, Any]] = {
     }
     for task_id, config in _TASKS_CACHE.items()
 }
-

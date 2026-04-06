@@ -244,7 +244,7 @@ class ReasoningPathGrader:
     """Grades the reasoning path and clinical workflow quality."""
     
     @staticmethod
-    def score_reasoning(action_history: List[TriageAction], task: TaskConfig) -> float:
+    def score_reasoning(action_history: List[TriageAction], task: "TaskConfig") -> float:
         """
         Score reasoning path quality based on clinical workflow.
         
@@ -344,6 +344,9 @@ def compute_final_score(
     Returns:
         Tuple of (final_score, component_scores_dict)
     """
+    # Import here to avoid circular dependency
+    from .tasks import TaskConfig
+    
     # Convert dict task to TaskConfig for new graders
     task_config = TaskConfig.model_validate(task)
     

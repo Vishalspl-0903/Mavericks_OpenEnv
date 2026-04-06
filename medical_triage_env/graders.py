@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple, TYPE_CHECKING
 
 from .logs import get_logger
 from .models import TriageAction, TriageReward
-from .tasks import TaskConfig
+
+if TYPE_CHECKING:
+    from .tasks import TaskConfig
 
 logger = get_logger(__name__)
 

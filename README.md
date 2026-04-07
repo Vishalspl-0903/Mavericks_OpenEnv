@@ -43,3 +43,10 @@ python inference.py
 - `HF_TOKEN` or `API_KEY`
 
 Use `.env` only for local development. Do not commit secrets.
+
+## Baseline Scores
+| Task                | Difficulty | Score |
+|---------------------|------------|-------|
+| classic-mi          | Easy       | 0.57 |
+| meningitis-suspect  | Medium     | 0.57 |
+| masked-sepsis       | Hard       | 0.76 |

@@ -48,15 +48,12 @@ class InfoRevealer:
         """
         vitals = deepcopy(self.task.initial_vitals)
         
-        # Remove keys that are marked as hidden in any hidden_info item
         hidden_keys = set()
         for hidden_item in self.task.hidden_info:
-            # Check if this hidden item contains vital sign keys to hide initially
             data = hidden_item.data
             if "hidden_vitals" in data:
                 hidden_keys.update(data["hidden_vitals"])
         
-        # Remove hidden vital signs from initial observation
         for key in hidden_keys:
             vitals.pop(key, None)
         
@@ -94,7 +91,6 @@ class InfoRevealer:
         
         revealed_info = {}
         
-        # Find matching hidden info items for this trigger
         for hidden_item in self.task.hidden_info:
             if hidden_item.trigger == action_type:
                 revealed_info.update(hidden_item.data)
@@ -137,13 +133,11 @@ class InfoRevealer:
         drifted_vitals = deepcopy(vitals)
         steps_since_start = step - self.task.vital_drift.starts_at_step + 1
         
-        # Apply drift for each configured vital sign
         for vital_key, drift_per_step in self.task.vital_drift.per_step.items():
             if vital_key in drifted_vitals and drifted_vitals[vital_key] is not None:
                 current_value = float(drifted_vitals[vital_key])
                 drifted_value = current_value + (drift_per_step * steps_since_start)
                 
-                # Apply physiological clamping
                 if vital_key == "heart_rate":
                     drifted_value = max(20.0, min(300.0, drifted_value))
                 elif vital_key == "oxygen_saturation":
@@ -153,7 +147,6 @@ class InfoRevealer:
                 elif vital_key == "respiratory_rate":
                     drifted_value = max(4.0, min(60.0, drifted_value))
                 
-                # Convert back to appropriate type (int for most vitals, float for temperature/spo2)
                 if vital_key in ["temperature", "oxygen_saturation"]:
                     drifted_vitals[vital_key] = round(drifted_value, 1)
                 else:

@@ -16,8 +16,6 @@ from .logs import get_logger
 
 logger = get_logger(__name__)
 
-# YAML configuration embedded for portability
-# In production, this would be loaded from config/tasks.yaml
 TASKS_YAML_CONTENT = """
 tasks:
   - id: classic-mi
@@ -331,7 +329,6 @@ class TaskConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-# Module-level cache: parsed once, reused
 _TASKS_CACHE: Dict[str, TaskConfig] = {}
 _TASK_LIST: List[str] = []
 
@@ -339,7 +336,6 @@ _TASK_LIST: List[str] = []
 def _load_tasks_from_yaml() -> tuple[Dict[str, TaskConfig], List[str]]:
     """Load and validate tasks from YAML content."""
     try:
-        # Try loading from external file first
         config_path = Path(__file__).parent.parent / "config" / "tasks.yaml"
         if config_path.exists():
             logger.info("loading_tasks_from_file", path=str(config_path))
@@ -383,7 +379,6 @@ def _load_tasks_from_yaml() -> tuple[Dict[str, TaskConfig], List[str]]:
         raise
 
 
-# Load tasks at module import time (parse once, cache forever)
 try:
     _TASKS_CACHE, _TASK_LIST = _load_tasks_from_yaml()
 except Exception as e:
@@ -449,7 +444,6 @@ def load_all_tasks() -> tuple[Dict[str, TaskConfig], List[str]]:
     return _TASKS_CACHE.copy(), _TASK_LIST.copy()
 
 
-# Backward compatibility exports for existing code
 TASK_LIST = _TASK_LIST
 TASKS: Dict[str, Dict[str, Any]] = {
     task_id: {

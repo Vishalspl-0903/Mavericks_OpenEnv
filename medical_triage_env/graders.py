@@ -216,7 +216,6 @@ class TemporalGrader:
         """
         base_score = 1.0
         
-        # High urgency cases (ESI 1-2): penalize for taking too many steps
         if esi_correct <= 2 and steps_taken > expected_steps + 1:
             extra_steps = steps_taken - (expected_steps + 1)
             penalty = 0.08 * extra_steps
@@ -231,7 +230,6 @@ class TemporalGrader:
                 penalty=penalty
             )
         
-        # Low urgency cases (ESI 4-5): bonus for efficient triage  
         elif esi_correct >= 4 and steps_taken < expected_steps - 1:
             saved_steps = (expected_steps - 1) - steps_taken
             bonus = 0.04 * saved_steps
@@ -246,7 +244,6 @@ class TemporalGrader:
                 bonus=bonus
             )
         
-        # Clamp to valid range
         return max(0.0, min(1.0, base_score))
 
 
@@ -267,7 +264,6 @@ class ReasoningPathGrader:
         """
         score = 0.0
         
-        # Check if agent asked for vitals before classifying (+0.2)
         asked_for_vitals = any(
             action.action_type == "clarify" and 
             any(keyword in action.clarifying_question.lower() if action.clarifying_question else ""
@@ -279,11 +275,9 @@ class ReasoningPathGrader:
             score += 0.2
             logger.debug("reasoning_bonus_vitals_check", task_id=task.id)
         
-        # Check if agent asked at least 1 relevant clarifying question (+0.3)
         relevant_clarifications = 0
         for action in action_history:
             if action.action_type == "clarify" and action.clarifying_question:
-                # Check if this clarification matches any key clarify actions for this task
                 for key_clarify in task.key_clarify_actions:
                     if key_clarify.lower() in action.clarifying_question.lower():
                         relevant_clarifications += 1
@@ -297,12 +291,10 @@ class ReasoningPathGrader:
                 count=relevant_clarifications
             )
         
-        # Check if agent flagged correct red-flag symptoms in reasoning (+0.3)
         flagged_red_flags = False
         for action in action_history:
             if action.action_type == "classify" and action.reasoning:
                 reasoning_lower = action.reasoning.lower()
-                # Look for key clinical reasoning keywords that indicate red flags
                 key_matches = sum(1 for keyword in task.key_reasoning_keywords 
                                 if keyword.lower() in reasoning_lower)
                 if key_matches >= 2:  # At least 2 key reasoning concepts mentioned
@@ -313,7 +305,6 @@ class ReasoningPathGrader:
             score += 0.3  
             logger.debug("reasoning_bonus_red_flags", task_id=task.id)
         
-        # Penalty for too many irrelevant clarifications (-0.2 if >2 irrelevant)
         irrelevant_clarifications = 0
         total_clarifications = sum(1 for action in action_history if action.action_type == "clarify")
         
@@ -330,7 +321,6 @@ class ReasoningPathGrader:
                 penalty=penalty
             )
         
-        # Clamp to valid range
         return max(0.0, min(1.0, score))
 
 
@@ -354,10 +344,8 @@ def compute_final_score(
     Returns:
         Tuple of (final_score, component_scores_dict)
     """
-    # Convert dict task to TaskConfig for new graders
     task_config = TaskConfig.model_validate(task)
     
-    # Compute undertriage penalty factor (from existing logic)
     undertriage_penalty_factor = 1.0
     correct_esi = _resolve_correct_esi(task)
     if correct_esi is not None and correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
@@ -369,7 +357,6 @@ def compute_final_score(
             task_id=task.get("task_id", "unknown")
         )
     
-    # Compute temporal score
     temporal_grader = TemporalGrader()
     temporal_score = temporal_grader.score_temporal(
         esi_correct=correct_esi if correct_esi is not None else 3,
@@ -377,11 +364,9 @@ def compute_final_score(
         expected_steps=task.get("expected_clarify_steps", 2)
     )
     
-    # Compute reasoning path score
     reasoning_grader = ReasoningPathGrader()
     reasoning_score = reasoning_grader.score_reasoning(action_history, task_config)
     
-    # Combine all components with specified weights
     final_score = (
         0.40 * esi_score +
         0.25 * undertriage_penalty_factor * esi_score +  # Apply penalty as multiplicative factor
@@ -389,7 +374,6 @@ def compute_final_score(
         0.15 * reasoning_score
     )
     
-    # Component scores for transparency
     component_scores = {
         "esi_score": esi_score,
         "undertriage_penalty_factor": undertriage_penalty_factor,

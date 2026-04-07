@@ -14,8 +14,6 @@ from uuid import uuid4
 import structlog
 from fastapi import HTTPException
 
-# Import will be updated once env.py is refactored to accept task_id
-# For now, we'll use TYPE_CHECKING to avoid circular imports during development
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -54,15 +52,12 @@ class SessionManager:
 
     def create(self, task_id: str) -> str:
         """Create a new session and return its ID."""
-        # Lazy import to avoid circular dependency
         from .env import MedicalTriageEnv
 
         session_id = str(uuid4())
 
         with self._lock:
-            # Create new env instance - will be updated in Step 6 to accept task_id
             env = MedicalTriageEnv()
-            # Initialize with task_id via reset for now
             env.reset(task_id)
             self._sessions[session_id] = env
             self._last_access[session_id] = time.time()
@@ -86,7 +81,6 @@ class SessionManager:
                     detail=f"Session {session_id} not found or expired",
                 )
 
-            # Update last access time
             self._last_access[session_id] = time.time()
             return self._sessions[session_id]
 
@@ -121,7 +115,6 @@ class SessionManager:
                 if current_time - last_access > self._ttl_seconds:
                     expired_sessions.append(session_id)
 
-        # Destroy outside the iteration to avoid dict size change issues
         for session_id in expired_sessions:
             logger.info(
                 "session_expired",

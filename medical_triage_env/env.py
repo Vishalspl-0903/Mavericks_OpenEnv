@@ -27,7 +27,6 @@ class MedicalTriageEnv:
         Args:
             task_id: ID of the task to load (e.g., "classic-mi")
         """
-        # Load all tasks and find the specified one
         self.all_tasks, self.task_ids = load_all_tasks()
         if task_id not in self.all_tasks:
             raise ValueError(f"Task {task_id} not found. Available tasks: {list(self.all_tasks.keys())}")
@@ -36,10 +35,8 @@ class MedicalTriageEnv:
         self.task_id = task_id
         self.session_id = str(uuid.uuid4())
         
-        # Initialize InfoRevealer for this task
         self.info_revealer = InfoRevealer(self.task_config)
         
-        # Episode state
         self.current_step = 0
         self.episode_rewards: List[float] = []
         self.action_history: List[TriageAction] = []
@@ -54,15 +51,12 @@ class MedicalTriageEnv:
 
     def build_observation(self) -> TriageObservation:
         """Build current observation with revealed information and drifted vitals."""
-        # Apply vital drift to current vitals
         drifted_vitals = self.info_revealer.apply_vital_drift(self.current_vitals, self.current_step)
         
-        # Build patient presentation with current state
         patient_payload = deepcopy(self.task_config.patient_info.model_dump())
         patient_payload["chief_complaint"] = self.task_config.chief_complaint
         patient_payload["vitals"] = drifted_vitals
         
-        # Handle hard case (masked sepsis) special logic
         if self.task_id == "masked-sepsis" and not self.info_revealer.revealed_triggers:
             patient_payload["additional_info"] = None
         else:
@@ -70,7 +64,6 @@ class MedicalTriageEnv:
         
         patient = PatientPresentation.model_validate(patient_payload)
         
-        # Get confounders for observation text  
         confounders = self.info_revealer.get_confounders()
         
         return TriageObservation(
@@ -89,7 +82,6 @@ class MedicalTriageEnv:
         self.action_history = []
         self.done = False
         
-        # Get initial observation with partial vitals from InfoRevealer
         self.current_vitals = self.info_revealer.get_initial_observation(self.current_step)
         
         logger.debug(
@@ -121,28 +113,23 @@ class MedicalTriageEnv:
         )
 
         if action.action_type == "clarify":
-            # Process clarification through InfoRevealer
             clarify_type = action.clarifying_question or "general_clarify"
             revealed_info = self.info_revealer.process_clarify(clarify_type, self.current_step)
             
-            # Apply vital drift after clarification
             self.current_vitals = self.info_revealer.apply_vital_drift(self.current_vitals, self.current_step)
             
-            # Update vitals with any newly revealed vital signs
             if "vitals" in revealed_info:
                 self.current_vitals.update(revealed_info["vitals"])
             
             reward = 0.15 if revealed_info else 0.05
             
         elif action.action_type == "classify":
-            # Hard case enforcement: masked sepsis requires clarification first
             if self.task_id == "masked-sepsis" and not self.info_revealer.revealed_triggers:
                 logger.warning(
                     "early_classification_penalty",
                     task_id=self.task_id,
                     step=self.current_step
                 )
-                # Return early with penalty score
                 self.done = True
                 final_reward = 0.15  # Max penalty score
                 info = {
@@ -155,13 +142,11 @@ class MedicalTriageEnv:
                 self.episode_rewards.append(final_reward)
                 return next_obs, final_reward, self.done, info
             
-            # Use legacy grader for basic scoring
             task_dict = self.task_config.model_dump()
             task_dict["correct_esi"] = self.task_config.esi_correct
             grader_result = grade(action, task_dict)
             raw_reward = grader_result.value
             
-            # Compute comprehensive final score with all graders
             final_score, component_scores = compute_final_score(
                 action=action,
                 task=task_dict,
@@ -176,10 +161,8 @@ class MedicalTriageEnv:
         else:
             raise HTTPException(status_code=400, detail="action_type must be 'classify' or 'clarify'")
 
-        # Check if maximum steps reached
         if self.current_step >= self.task_config.max_steps:
             if not self.done:
-                # Force classification with penalty
                 task_dict = self.task_config.model_dump()
                 task_dict["correct_esi"] = self.task_config.esi_correct
                 grader_result = grade(action, task_dict)
@@ -187,7 +170,6 @@ class MedicalTriageEnv:
                 reward = max(0.0, raw_reward - 0.10)
             self.done = True
 
-        # Apply reward headroom cap
         current_total = sum(self.episode_rewards)
         reward_headroom = max(0.0, 1.0 - current_total)
         final_reward = min(reward, reward_headroom)
@@ -204,14 +186,12 @@ class MedicalTriageEnv:
             cumulative_score=round(sum(self.episode_rewards), 2),
         )
         
-        # Build comprehensive info dict
         info = {
             "raw_score": raw_reward if action.action_type == "classify" else reward,
             "step": self.current_step,
             "grader_feedback": grader_result.feedback if grader_result else "",
         }
         
-        # Add component scores if this was a classification
         if action.action_type == "classify" and 'component_scores' in locals():
             info.update(component_scores)
             
@@ -242,9 +222,7 @@ class MedicalTriageEnv:
         }
 
 
-# Environment instances are now created per task, no global singleton
 
-# Simple session management for FastAPI endpoints
 _active_environments: Dict[str, MedicalTriageEnv] = {}
 
 
@@ -257,14 +235,11 @@ def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, An
     task_id = payload["task_id"]
     
     try:
-        # Create new environment instance for this task
         env = MedicalTriageEnv(task_id)
         observation = env.reset()
         
-        # Store in active environments using session_id
         _active_environments[env.session_id] = env
         
-        # Clean up old environments to prevent memory leaks (keep last 10)
         if len(_active_environments) > 10:
             oldest_sessions = list(_active_environments.keys())[:-10]
             for session_id in oldest_sessions:
@@ -276,7 +251,6 @@ def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, An
             session_id=env.session_id
         )
         
-        # Flatten observation fields into response with session_id at top level
         return {
             "session_id": env.session_id,
             **observation.model_dump(),

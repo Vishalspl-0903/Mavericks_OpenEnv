@@ -98,8 +98,18 @@ def _count_action_matches(recommended_actions: Sequence[str], expected_actions: 
     return len(matched_expected), matched_expected
 
 
+def _resolve_correct_esi(task: Dict[str, Any]) -> int | None:
+    value = task.get("correct_esi", task.get("esi_correct"))
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_feedback(action: TriageAction, task: Dict[str, Any], esi_score: float, reasoning_score: float, action_score: float) -> str:
-    correct_esi = int(task["correct_esi"])
+    correct_esi = _resolve_correct_esi(task)
     matched_keywords = _count_keyword_matches(action.reasoning, task.get("key_reasoning_keywords", []))
     matched_count, matched_actions = _count_action_matches(action.recommended_actions, task.get("expected_actions", []))
     total_expected_actions = len(task.get("expected_actions", []))
@@ -108,7 +118,9 @@ def build_feedback(action: TriageAction, task: Dict[str, Any], esi_score: float,
 
     parts: List[str] = []
     if action.action_type == "classify":
-        if action.esi_level == correct_esi:
+        if correct_esi is None:
+            parts.append("Reference ESI unavailable; skipping ESI comparison.")
+        elif action.esi_level == correct_esi:
             parts.append(f"Correct ESI {correct_esi} classification.")
         else:
             parts.append(f"ESI {action.esi_level} selected; correct ESI is {correct_esi}.")
@@ -127,7 +139,7 @@ def build_feedback(action: TriageAction, task: Dict[str, Any], esi_score: float,
 
     parts.append(f"Recommended actions covered {matched_count}/{total_expected_actions} expected actions.")
 
-    if correct_esi <= 2 and action.action_type == "classify" and action.esi_level is not None and action.esi_level >= 4:
+    if correct_esi is not None and correct_esi <= 2 and action.action_type == "classify" and action.esi_level is not None and action.esi_level >= 4:
         parts.append("Dangerous undertriage penalty applied.")
 
     return " ".join(parts)
@@ -135,12 +147,12 @@ def build_feedback(action: TriageAction, task: Dict[str, Any], esi_score: float,
 
 def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
     undertriage_penalty = False
+    correct_esi = _resolve_correct_esi(task)
 
     if action.action_type == "clarify":
         esi_score = 0.10
     else:
-        correct_esi = int(task["correct_esi"])
-        if action.esi_level is None:
+        if action.esi_level is None or correct_esi is None:
             diff = 5
         else:
             diff = abs(int(action.esi_level) - correct_esi)
@@ -152,7 +164,7 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
             esi_score = 0.10
         else:
             esi_score = 0.00
-        if correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
+        if correct_esi is not None and correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
             undertriage_penalty = True
 
     matched_keywords = _count_keyword_matches(action.reasoning, task.get("key_reasoning_keywords", []))
@@ -170,7 +182,7 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
     if undertriage_penalty:
         logger.warning(
             "undertriage_detected",
-            correct_esi=task["correct_esi"],
+            correct_esi=correct_esi,
             predicted_esi=action.esi_level,
             task_id=task.get("task_id", "unknown"),
             penalty_applied=True,
@@ -349,11 +361,12 @@ def compute_final_score(
     
     # Compute undertriage penalty factor (from existing logic)
     undertriage_penalty_factor = 1.0
-    if task["correct_esi"] <= 2 and action.esi_level is not None and action.esi_level >= 4:
+    correct_esi = _resolve_correct_esi(task)
+    if correct_esi is not None and correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
         undertriage_penalty_factor = 0.25
         logger.warning(
             "undertriage_penalty_applied",
-            correct_esi=task["correct_esi"],
+            correct_esi=correct_esi,
             predicted_esi=action.esi_level,
             task_id=task.get("task_id", "unknown")
         )
@@ -361,7 +374,7 @@ def compute_final_score(
     # Compute temporal score
     temporal_grader = TemporalGrader()
     temporal_score = temporal_grader.score_temporal(
-        esi_correct=task["correct_esi"],
+        esi_correct=correct_esi if correct_esi is not None else 3,
         steps_taken=steps_taken,
         expected_steps=task.get("expected_clarify_steps", 2)
     )

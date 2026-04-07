@@ -157,6 +157,7 @@ class MedicalTriageEnv:
             
             # Use legacy grader for basic scoring
             task_dict = self.task_config.model_dump()
+            task_dict["correct_esi"] = self.task_config.esi_correct
             grader_result = grade(action, task_dict)
             raw_reward = grader_result.value
             
@@ -180,6 +181,7 @@ class MedicalTriageEnv:
             if not self.done:
                 # Force classification with penalty
                 task_dict = self.task_config.model_dump()
+                task_dict["correct_esi"] = self.task_config.esi_correct
                 grader_result = grade(action, task_dict)
                 raw_reward = grader_result.value
                 reward = max(0.0, raw_reward - 0.10)

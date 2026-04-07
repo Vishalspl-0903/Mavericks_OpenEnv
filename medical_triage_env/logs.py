@@ -37,7 +37,6 @@ def _configure_structlog() -> None:
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         _scrub_phi,
@@ -57,7 +56,7 @@ def _configure_structlog() -> None:
     
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(logging_level="DEBUG"),
+        wrapper_class=structlog.make_filtering_bound_logger(10),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
         cache_logger_on_first_use=True,

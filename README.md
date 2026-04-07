@@ -1,3 +1,11 @@
+---
+title: medical-triage-env
+sdk: docker
+app_port: 8000
+colorFrom: blue
+colorTo: green
+---
+
 # Medical Triage Environment
 
 An OpenEnv benchmark for emergency department triage using the Emergency Severity Index (ESI 1-5).

@@ -274,9 +274,10 @@ def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, An
             session_id=env.session_id
         )
         
+        # Flatten observation fields into response with session_id at top level
         return {
             "session_id": env.session_id,
-            "observation": observation,
+            **observation.model_dump(),
         }
         
     except ValueError as exc:

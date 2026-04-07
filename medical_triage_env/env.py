@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Body, FastAPI, HTTPException
 
@@ -247,7 +247,7 @@ _active_environments: Dict[str, MedicalTriageEnv] = {}
 
 
 @app.post("/reset")
-def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> TriageObservation:
+def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, Any]:
     """Reset environment for a specific task."""
     if not payload or "task_id" not in payload:
         raise HTTPException(status_code=400, detail="task_id is required in request body")
@@ -274,7 +274,10 @@ def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> TriageObserv
             session_id=env.session_id
         )
         
-        return observation
+        return {
+            "session_id": env.session_id,
+            "observation": observation,
+        }
         
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

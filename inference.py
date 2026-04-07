@@ -9,13 +9,10 @@ import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from medical_triage_env.logs import get_logger
 from medical_triage_env.models import TriageAction
 from medical_triage_env.tasks import TASK_LIST
 
 load_dotenv()
-
-logger = get_logger(__name__)
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
@@ -213,14 +210,7 @@ def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
             rewards.append(reward)
             steps += 1
 
-            logger.debug(
-                "inference_step",
-                step=steps,
-                action=action_json,
-                reward=round(reward, 2),
-                done=done,
-                task_id=task_id,
-            )
+            print(f"[STEP] step={steps} action={action_json} reward={round(reward, 2)} done={str(done).lower()} error=null")
 
             state_response = http.get("/state")
             state_response.raise_for_status()
@@ -240,12 +230,7 @@ def main() -> None:
         success = False
         steps = 0
         rewards: List[float] = []
-        logger.info(
-            "inference_start",
-            task_id=task_id,
-            env=BENCHMARK,
-            model=MODEL_NAME,
-        )
+        print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}")
         try:
             api_key = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
             if not api_key:
@@ -253,22 +238,11 @@ def main() -> None:
             client = create_client(api_key)
             success, steps, rewards = run_episode(client, task_id)
         except Exception as e:
-            logger.error(
-                "inference_error",
-                task_id=task_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            print(f"[ERROR] task={task_id} error={str(e)} error_type={type(e).__name__}")
         finally:
             score = round(sum(rewards), 2)
-            logger.info(
-                "inference_end",
-                task_id=task_id,
-                success=success,
-                steps=steps,
-                score=score,
-                rewards=[round(r, 2) for r in rewards],
-            )
+            rewards_str = ",".join(str(round(r, 2)) for r in rewards)
+            print(f"[END] success={str(success).lower()} steps={steps} score={score} rewards={rewards_str}")
 
 
 if __name__ == "__main__":

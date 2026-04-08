@@ -14,8 +14,7 @@ from medical_triage_env.tasks import TASK_LIST
 
 load_dotenv()
 
-MODEL_NAME = os.getenv("MODEL_NAME") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
-BASE_URL = os.getenv("BASE_URL") or "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 BENCHMARK = "medical-triage-env"
 MAX_STEPS = 4
 
@@ -78,14 +77,13 @@ def observation_to_prompt(observation: dict) -> str:
     )
 
 
-def call_llm(client: OpenAI, observation: dict) -> TriageAction:
-    print(f"[DEBUG] Using API_BASE_URL={os.environ['API_BASE_URL']}", flush=True)
+def call_llm(client: OpenAI, observation: dict, model: str) -> TriageAction:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": observation_to_prompt(observation)},
     ]
     response = client.chat.completions.create(
-        model=MODEL_NAME,
+        model=model,
         messages=messages,
         temperature=0,
         max_tokens=512,
@@ -101,7 +99,7 @@ def format_action(action: TriageAction) -> str:
     return compact_json(action.model_dump(exclude_none=True))
 
 
-def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
+def run_episode(client: OpenAI, task_id: str, model: str) -> tuple[bool, int, List[float]]:
     rewards: List[float] = []
     steps = 0
     success = False
@@ -119,7 +117,7 @@ def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
             raise ValueError("/reset response missing session_id")
 
         while True:
-            action = call_llm(client, observation)
+            action = call_llm(client, observation, model)
 
             action_json = format_action(action)
 
@@ -155,18 +153,31 @@ def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
 def main() -> None:
     api_base_url = os.environ["API_BASE_URL"]
     api_key = os.environ["API_KEY"]
+    model = os.environ.get("MODEL_NAME") or "meta-llama/Meta-Llama-3-8B-Instruct"
+
+    client = OpenAI(
+        base_url=api_base_url,
+        api_key=api_key
+    )
 
     for task_id in TASK_LIST:
         success = False
         steps = 0
         rewards: List[float] = []
-        print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}")
+        print(f"[START] task={task_id} env={BENCHMARK} model={model}")
+        print("[DEBUG] Calling proxy...", flush=True)
+        print(f"[DEBUG] BASE_URL={api_base_url}", flush=True)
+        print(f"[DEBUG] MODEL={model}", flush=True)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5
+        )
+        _ = response
+        print("[DEBUG] Proxy response received", flush=True)
+        print("[DEBUG] Proxy call completed", flush=True)
         try:
-            client = OpenAI(
-                base_url=api_base_url,
-                api_key=api_key,
-            )
-            success, steps, rewards = run_episode(client, task_id)
+            success, steps, rewards = run_episode(client, task_id, model)
         except Exception as e:
             print(f"[ERROR] task={task_id} error={str(e)} error_type={type(e).__name__}")
         finally:

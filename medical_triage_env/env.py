@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 
 from .graders import grade, compute_final_score
 from .info_revealer import InfoRevealer
@@ -322,5 +323,26 @@ def health_endpoint() -> dict:
 
 
 @app.get("/")
-def root_endpoint() -> dict:
-    return {"name": "medical-triage-env", "version": "0.1.0"}
+def root_endpoint() -> HTMLResponse:
+        return HTMLResponse(
+                content="""
+<!doctype html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+    <title>Medical Triage Environment</title>
+</head>
+<body>
+    <h1>Medical Triage Environment is running</h1>
+    <p>Available endpoints:</p>
+    <ul>
+        <li><code>/health</code></li>
+        <li><code>/reset</code></li>
+        <li><code>/step</code></li>
+        <li><code>/state</code></li>
+    </ul>
+</body>
+</html>
+""".strip()
+        )

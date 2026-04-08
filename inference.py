@@ -14,10 +14,8 @@ from medical_triage_env.tasks import TASK_LIST
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
 BASE_URL = os.getenv("BASE_URL") or "http://127.0.0.1:8000"
-API_KEY = os.getenv("API_KEY") or "not-needed"
 BENCHMARK = "medical-triage-env"
 MAX_STEPS = 4
 
@@ -81,7 +79,7 @@ def observation_to_prompt(observation: dict) -> str:
 
 
 def call_llm(client: OpenAI, observation: dict) -> TriageAction:
-    print(f"[DEBUG] Using API_BASE_URL={API_BASE_URL}", flush=True)
+    print(f"[DEBUG] Using API_BASE_URL={os.environ['API_BASE_URL']}", flush=True)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": observation_to_prompt(observation)},
@@ -151,6 +149,9 @@ def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
 
 
 def main() -> None:
+    api_base_url = os.environ["API_BASE_URL"]
+    api_key = os.environ["API_KEY"]
+
     for task_id in TASK_LIST:
         success = False
         steps = 0
@@ -158,8 +159,8 @@ def main() -> None:
         print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}")
         try:
             client = OpenAI(
-                base_url=API_BASE_URL,
-                api_key=API_KEY,
+                base_url=api_base_url,
+                api_key=api_key,
             )
             success, steps, rewards = run_episode(client, task_id)
         except Exception as e:

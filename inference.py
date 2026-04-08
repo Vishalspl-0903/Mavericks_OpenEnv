@@ -109,8 +109,12 @@ def run_episode(client: OpenAI, task_id: str) -> tuple[bool, int, List[float]]:
     with httpx.Client(base_url=BASE_URL, timeout=30.0) as http:
         reset_response = http.post("/reset", json={"task_id": task_id})
         reset_response.raise_for_status()
-        observation = reset_response.json()
-        session_id = observation.get("session_id")
+        reset_payload = reset_response.json()
+        observation = reset_payload.get("observation")
+        info = reset_payload.get("info") or {}
+        session_id = info.get("session_id")
+        if observation is None:
+            raise ValueError("/reset response missing observation")
         if not session_id:
             raise ValueError("/reset response missing session_id")
 

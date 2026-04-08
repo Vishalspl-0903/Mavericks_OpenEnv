@@ -14,7 +14,8 @@ from medical_triage_env.tasks import TASK_LIST
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY = os.environ["API_KEY"]
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 FALLBACK_MODEL_NAME = os.getenv("FALLBACK_MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
 BENCHMARK = "medical-triage-env"
@@ -90,7 +91,10 @@ def observation_to_prompt(observation: dict) -> str:
 
 
 def create_client(api_key: str) -> OpenAI:
-    return OpenAI(base_url=API_BASE_URL, api_key=api_key)
+    return OpenAI(
+        base_url=API_BASE_URL,
+        api_key=api_key,
+    )
 
 
 def build_fallback_action(observation: dict) -> TriageAction:
@@ -518,10 +522,7 @@ def main() -> None:
         rewards: List[float] = []
         print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}")
         try:
-            api_key = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-            if not api_key:
-                raise ValueError("Missing HF_TOKEN or API_KEY in environment")
-            client = create_client(api_key)
+            client = create_client(API_KEY)
             success, steps, rewards = run_episode(client, task_id)
         except Exception as e:
             print(f"[ERROR] task={task_id} error={str(e)} error_type={type(e).__name__}")

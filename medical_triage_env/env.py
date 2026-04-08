@@ -346,3 +346,8 @@ def root_endpoint() -> HTMLResponse:
 </html>
 """.strip()
         )
+
+
+@app.get("/web")
+def web_endpoint() -> HTMLResponse:
+    return root_endpoint()

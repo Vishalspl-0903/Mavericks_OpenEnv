@@ -253,8 +253,11 @@ def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, An
         )
         
         return {
-            "session_id": env.session_id,
-            **observation.model_dump(),
+            "observation": observation.model_dump(),
+            "info": {
+                "session_id": env.session_id,
+                "task_id": task_id,
+            },
         }
         
     except ValueError as exc:

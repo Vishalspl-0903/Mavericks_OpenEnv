@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import List, Optional
+from typing import List
 
 import httpx
 from openai import OpenAI
@@ -14,7 +14,10 @@ from medical_triage_env.tasks import TASK_LIST
 
 load_dotenv()
 
-BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+BASE_URL = os.environ["BASE_URL"]
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY = os.environ["API_KEY"]
+MODEL_NAME = os.environ["MODEL_NAME"]
 BENCHMARK = "medical-triage-env"
 MAX_STEPS = 4
 
@@ -45,10 +48,6 @@ For each patient you must respond with valid JSON only, no markdown:
 If you need more information before classifying, use clarify once.
 For obvious emergencies, classify immediately."""
 
-def compact_json(data: dict) -> str:
-    return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-
-
 def strip_code_fences(text: str) -> str:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -57,133 +56,98 @@ def strip_code_fences(text: str) -> str:
     return cleaned.strip()
 
 
-def parse_action(text: str) -> Optional[TriageAction]:
+def parse_action(text: str) -> TriageAction:
     cleaned = strip_code_fences(text)
-    try:
-        payload = json.loads(cleaned)
-        action = TriageAction.model_validate(payload)
-        return action
-    except Exception:
-        return None
+    payload = json.loads(cleaned)
+    return TriageAction.model_validate(payload)
 
 
 def observation_to_prompt(observation: dict) -> str:
     return (
         "Patient observation:\n"
-        f"{json.dumps(observation, indent=2, ensure_ascii=False)}\n\n"
-        "Safety-first triage instruction: when uncertain, choose higher acuity to avoid undertriage. "
-        "Use ESI 1 for immediate life threat/life-saving intervention and ESI 2 for high-risk, confused, or severe distress presentations. "
-        "Return a single JSON object only."
+        f"{json.dumps(observation, indent=2)}\n\n"
+        "Return JSON only."
     )
 
 
-def call_llm(client: OpenAI, observation: dict, model: str) -> TriageAction:
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": observation_to_prompt(observation)},
-    ]
+def call_llm(client: OpenAI, observation: dict) -> TriageAction:
+    print(f"[DEBUG] PROXY CALL -> {API_BASE_URL}", flush=True)
+
     response = client.chat.completions.create(
-        model=model,
-        messages=messages,
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": observation_to_prompt(observation)},
+        ],
         temperature=0,
         max_tokens=512,
     )
-    content = response.choices[0].message.content or ""
-    action = parse_action(content)
-    if action is None:
-        raise ValueError("LLM returned invalid JSON")
-    return action
+
+    content = response.choices[0].message.content
+    if not content:
+        raise RuntimeError("Empty LLM response")
+
+    return parse_action(content)
 
 
-def format_action(action: TriageAction) -> str:
-    return compact_json(action.model_dump(exclude_none=True))
-
-
-def run_episode(client: OpenAI, task_id: str, model: str) -> tuple[bool, int, List[float]]:
+def run_episode(client: OpenAI, task_id: str) -> tuple[int, List[float]]:
     rewards: List[float] = []
     steps = 0
-    success = False
 
     with httpx.Client(base_url=BASE_URL, timeout=30.0) as http:
-        reset_response = http.post("/reset", json={"task_id": task_id})
-        reset_response.raise_for_status()
-        reset_payload = reset_response.json()
-        observation = reset_payload.get("observation")
-        info = reset_payload.get("info") or {}
-        session_id = info.get("session_id")
-        if observation is None:
-            raise ValueError("/reset response missing observation")
-        if not session_id:
-            raise ValueError("/reset response missing session_id")
+        reset = http.post("/reset", json={"task_id": task_id})
+        reset.raise_for_status()
+
+        data = reset.json()
+        observation = data["observation"]
+        session_id = data["info"]["session_id"]
 
         while True:
-            action = call_llm(client, observation, model)
+            action = call_llm(client, observation)
 
-            action_json = format_action(action)
-
-            step_response = http.post(
+            step = http.post(
                 "/step",
                 json={
                     "session_id": session_id,
                     "action": action.model_dump(exclude_none=True),
                 },
             )
-            step_response.raise_for_status()
-            result = step_response.json()
-            reward = float(result.get("reward", 0.0))
-            done = bool(result.get("done", False))
+            step.raise_for_status()
+
+            result = step.json()
+
+            reward = float(result["reward"])
+            done = bool(result["done"])
+
             rewards.append(reward)
             steps += 1
 
-            print(f"[STEP] step={steps} action={action_json} reward={round(reward, 2)} done={str(done).lower()} error=null")
+            print(f"[STEP] {steps} reward={reward} done={done}")
 
-            state_response = http.get("/state", params={"session_id": session_id})
-            state_response.raise_for_status()
             observation = result.get("observation", observation)
 
-            if done:
-                success = True
-                break
-            if steps >= MAX_STEPS:
+            if done or steps >= MAX_STEPS:
                 break
 
-    return success, steps, rewards
+    return steps, rewards
 
 
 def main() -> None:
-    api_base_url = os.environ["API_BASE_URL"]
-    api_key = os.environ["API_KEY"]
-    model = os.environ.get("MODEL_NAME") or "meta-llama/Meta-Llama-3-8B-Instruct"
-
     client = OpenAI(
-        base_url=api_base_url,
-        api_key=api_key
+        base_url=API_BASE_URL,
+        api_key=API_KEY
     )
 
-    for task_id in TASK_LIST:
-        success = False
-        steps = 0
-        rewards: List[float] = []
-        print(f"[START] task={task_id} env={BENCHMARK} model={model}")
-        print("[DEBUG] Calling proxy...", flush=True)
-        print(f"[DEBUG] BASE_URL={api_base_url}", flush=True)
-        print(f"[DEBUG] MODEL={model}", flush=True)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=5
-        )
-        _ = response
-        print("[DEBUG] Proxy response received", flush=True)
-        print("[DEBUG] Proxy call completed", flush=True)
-        try:
-            success, steps, rewards = run_episode(client, task_id, model)
-        except Exception as e:
-            print(f"[ERROR] task={task_id} error={str(e)} error_type={type(e).__name__}")
-        finally:
-            score = round(sum(rewards), 2)
-            rewards_str = ",".join(str(round(r, 2)) for r in rewards)
-            print(f"[END] success={str(success).lower()} steps={steps} score={score} rewards={rewards_str}")
+    client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": "ping"}],
+        max_tokens=5,
+    )
+
+    for task in TASK_LIST:
+        print(f"[START] {task}")
+        steps, rewards = run_episode(client, task)
+        print(f"[END] steps={steps} score={sum(rewards)}")
 
 
 if __name__ == "__main__":

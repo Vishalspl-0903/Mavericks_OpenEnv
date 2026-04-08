@@ -230,10 +230,13 @@ _active_environments: Dict[str, MedicalTriageEnv] = {}
 @app.post("/reset")
 def reset_endpoint(payload: Optional[dict] = Body(default=None)) -> Dict[str, Any]:
     """Reset environment for a specific task."""
-    if not payload or "task_id" not in payload:
-        raise HTTPException(status_code=400, detail="task_id is required in request body")
-    
-    task_id = payload["task_id"]
+    if payload and "task_id" in payload:
+        task_id = payload["task_id"]
+    else:
+        _, task_ids = load_all_tasks()
+        if not task_ids:
+            raise HTTPException(status_code=500, detail="No tasks available")
+        task_id = task_ids[0]
     
     try:
         env = MedicalTriageEnv(task_id)

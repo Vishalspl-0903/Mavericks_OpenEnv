@@ -39,8 +39,9 @@ python inference.py
 
 ## Environment Variables
 - `API_BASE_URL`
+- `API_KEY`
 - `MODEL_NAME`
-- `HF_TOKEN` or `API_KEY`
+- `BASE_URL`
 
 Use `.env` only for local development. Do not commit secrets.
 

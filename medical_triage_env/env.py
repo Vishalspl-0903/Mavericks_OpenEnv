@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from .graders import grade
+from .graders import compute_final_score, grade
 from .info_revealer import InfoRevealer
 from .logs import get_logger
 from .models import PatientPresentation, TriageAction, TriageObservation
@@ -112,6 +112,7 @@ class MedicalTriageEnv:
         reward = 0.0
         raw_reward = 0.0
         grader_result = None
+        components: Dict[str, float] = {}
 
         logger.debug(
             "env_step_start",
@@ -155,15 +156,16 @@ class MedicalTriageEnv:
             grader_result = grade(action, task_dict)
             raw_reward = grader_result.value
 
-            correct_esi = self.task_config.esi_correct
-            urgency_bonus = (
-                0.10
-                if action.esi_level == correct_esi and self.current_step <= 2
-                else 0.0
+            # Use full multi-component scorer (TemporalGrader + ReasoningPathGrader).
+            final_score, components = compute_final_score(
+                action=action,
+                task=task_dict,
+                action_history=self.action_history,
+                esi_score=grader_result.esi_accuracy,
+                steps_taken=self.current_step,
             )
-            step_penalty = 0.03 * (self.current_step - 1)
-
-            reward = round(max(0.0, raw_reward + urgency_bonus - step_penalty), 2)
+            raw_reward = final_score
+            reward = raw_reward
             self.done = True
 
         else:
@@ -196,6 +198,7 @@ class MedicalTriageEnv:
             "step": self.current_step,
             "grader_feedback": grader_result.feedback if grader_result else "",
             "additional_info_revealed": self._additional_info_revealed,
+            "score_components": components,
         }
 
         return next_obs, reward, self.done, info

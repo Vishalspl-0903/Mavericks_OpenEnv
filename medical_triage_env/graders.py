@@ -168,18 +168,24 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
             diff = abs(int(action.esi_level) - correct_esi)
         if diff == 0:
             esi_score = 0.50
+
         elif diff == 1:
+            # Asymmetric penalty: predicting higher ESI (less urgent) on a
+            # critical patient (correct ESI <= 2) is dangerous undertriage.
+            # Give it a sharp low score so GRPO learns to avoid it.
             if (
                 correct_esi is not None
                 and action.esi_level is not None
                 and int(action.esi_level) > correct_esi
                 and correct_esi <= 2
             ):
-                esi_score = 0.10
+                esi_score = 0.08   # was 0.25 — undertriage on critical patient
             else:
-                esi_score = 0.25
+                esi_score = 0.30   # was 0.25 — reward close answers slightly more
+
         elif diff == 2:
-            esi_score = 0.10
+            esi_score = 0.05   # was 0.10 — widen gap from diff=1
+
         else:
             esi_score = 0.00
         if correct_esi is not None and correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
@@ -215,7 +221,6 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
             task_id=task.get("task_id", "unknown"),
             penalty_applied=True,
         )
-        raw = raw * 0.25
 
     final = round(min(max(raw, 0.0), 1.0), 2)
     feedback = build_feedback(action, task, esi_score, reasoning_score, action_score)
@@ -409,19 +414,20 @@ def compute_final_score(
     reasoning_grader = ReasoningPathGrader()
     reasoning_score = reasoning_grader.score_reasoning(action_history, task_config)
     
-    final_score = (
-        0.40 * esi_score +
-        0.25 * undertriage_penalty_factor * esi_score +  # Apply penalty as multiplicative factor
-        0.20 * temporal_score +
-        0.15 * reasoning_score
+    base_score = (
+        0.75 * esi_score +
+        0.15 * temporal_score +
+        0.10 * reasoning_score
     )
+    final_score = base_score * undertriage_penalty_factor
     
     component_scores = {
-        "esi_score": esi_score,
+        "esi_score": round(esi_score, 4),
         "undertriage_penalty_factor": undertriage_penalty_factor,
-        "temporal_score": temporal_score,
-        "reasoning_score": reasoning_score,
-        "final_score": round(max(0.0, min(1.0, final_score)), 2)
+        "temporal_score": round(temporal_score, 4),
+        "reasoning_score": round(reasoning_score, 4),
+        "base_score": round(max(0.0, min(1.0, base_score)), 4),
+        "final_score": round(max(0.0, min(1.0, final_score)), 2),
     }
     
     logger.debug(

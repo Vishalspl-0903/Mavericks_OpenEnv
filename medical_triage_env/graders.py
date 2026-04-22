@@ -160,34 +160,28 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
 
     # ESI accuracy (0.0 - 0.50)
     if action.action_type == "clarify":
-        esi_score = 0.10
+        esi_score = 0.02
     else:
         if action.esi_level is None or correct_esi is None:
             diff = 5
         else:
             diff = abs(int(action.esi_level) - correct_esi)
         if diff == 0:
-            esi_score = 0.50
-
+            esi_score = 0.70
         elif diff == 1:
-            # Asymmetric penalty: predicting higher ESI (less urgent) on a
-            # critical patient (correct ESI <= 2) is dangerous undertriage.
-            # Give it a sharp low score so GRPO learns to avoid it.
             if (
                 correct_esi is not None
                 and action.esi_level is not None
                 and int(action.esi_level) > correct_esi
                 and correct_esi <= 2
             ):
-                esi_score = 0.08   # was 0.25 — undertriage on critical patient
+                esi_score = 0.08
             else:
-                esi_score = 0.30   # was 0.25 — reward close answers slightly more
-
+                esi_score = 0.20
         elif diff == 2:
-            esi_score = 0.05   # was 0.10 — widen gap from diff=1
-
-        else:
             esi_score = 0.00
+        else:
+            esi_score = -0.10
         if correct_esi is not None and correct_esi <= 2 and action.esi_level is not None and action.esi_level >= 4:
             undertriage_penalty = True
 
@@ -197,7 +191,7 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
     total_keywords = len(keywords)
     if total_keywords > 0:
         keyword_ratio = len(matched_keywords) / total_keywords
-        reasoning_score = round(min(0.30, keyword_ratio * 0.30), 4)
+        reasoning_score = round(min(0.15, keyword_ratio * 0.15), 4)
     else:
         reasoning_score = 0.10
 
@@ -208,12 +202,15 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
     expected_actions = task.get("expected_actions", [])
     matched_count, matched_actions = _action_matches(action.recommended_actions, expected_actions)
     if expected_actions:
-        action_score = round((matched_count / len(expected_actions)) * 0.20, 4)
+        action_score = round((matched_count / len(expected_actions)) * 0.15, 4)
     else:
         action_score = 0.0
 
     raw = esi_score + reasoning_score + action_score
+    if action.action_type == "classify" and diff == 0:
+        raw += 0.05
     if undertriage_penalty:
+        raw *= 0.25
         logger.warning(
             "undertriage_detected",
             correct_esi=correct_esi,
@@ -222,7 +219,7 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
             penalty_applied=True,
         )
 
-    final = round(min(max(raw, 0.0), 1.0), 2)
+    final = float(min(max(raw, -1.0), 1.0))
     feedback = build_feedback(action, task, esi_score, reasoning_score, action_score)
 
     logger.debug(
@@ -405,18 +402,22 @@ def compute_final_score(
         )
     
     temporal_grader = TemporalGrader()
-    temporal_score = temporal_grader.score_temporal(
-        esi_correct=correct_esi if correct_esi is not None else 3,
-        steps_taken=steps_taken,
-        expected_steps=task.get("expected_clarify_steps", 2)
-    )
-    
     reasoning_grader = ReasoningPathGrader()
-    reasoning_score = reasoning_grader.score_reasoning(action_history, task_config)
+
+    if action.action_type == "clarify":
+        temporal_score = 0.2
+        reasoning_score = 0.0
+    else:
+        temporal_score = temporal_grader.score_temporal(
+            esi_correct=correct_esi if correct_esi is not None else 3,
+            steps_taken=steps_taken,
+            expected_steps=task.get("expected_clarify_steps", 2)
+        )
+        reasoning_score = reasoning_grader.score_reasoning(action_history, task_config)
     
     base_score = (
-        0.75 * esi_score +
-        0.15 * temporal_score +
+        0.80 * esi_score +
+        0.10 * temporal_score +
         0.10 * reasoning_score
     )
     final_score = base_score * undertriage_penalty_factor
@@ -427,7 +428,7 @@ def compute_final_score(
         "temporal_score": round(temporal_score, 4),
         "reasoning_score": round(reasoning_score, 4),
         "base_score": round(max(0.0, min(1.0, base_score)), 4),
-        "final_score": round(max(0.0, min(1.0, final_score)), 2),
+        "final_score": float(max(0.0, min(1.0, final_score))),
     }
     
     logger.debug(

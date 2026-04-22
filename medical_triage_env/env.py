@@ -128,14 +128,14 @@ class MedicalTriageEnv:
                 and bool(self.task_config.hidden_info)
             ):
                 self._additional_info_revealed = True
-                reward = 0.15
+                reward = 0.02
                 logger.debug(
                     "additional_info_revealed",
                     task_id=self.task_id,
                     step=self.current_step,
                 )
             else:
-                reward = 0.05
+                reward = -0.01
 
             # Keep InfoRevealer behavior for trigger/vitals updates, but do not block rewarding.
             try:
@@ -177,10 +177,10 @@ class MedicalTriageEnv:
                 task_dict["correct_esi"] = self.task_config.esi_correct
                 grader_result = grade(action, task_dict)
                 raw_reward = grader_result.value
-                reward = round(max(0.0, raw_reward - 0.10), 2)
+                reward = max(0.0, raw_reward - 0.10)
             self.done = True
 
-        reward = round(reward, 2)
+        reward = float(reward)
         self.episode_rewards.append(reward)
         next_obs = self.build_observation()
 

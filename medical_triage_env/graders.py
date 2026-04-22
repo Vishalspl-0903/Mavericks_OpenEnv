@@ -169,7 +169,15 @@ def grade(action: TriageAction, task: Dict[str, Any]) -> TriageReward:
         if diff == 0:
             esi_score = 0.50
         elif diff == 1:
-            esi_score = 0.25
+            if (
+                correct_esi is not None
+                and action.esi_level is not None
+                and int(action.esi_level) > correct_esi
+                and correct_esi <= 2
+            ):
+                esi_score = 0.10
+            else:
+                esi_score = 0.25
         elif diff == 2:
             esi_score = 0.10
         else:

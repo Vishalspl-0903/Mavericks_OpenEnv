@@ -12,7 +12,7 @@ An OpenEnv benchmark for emergency department triage using the Emergency Severit
 
 - Training notebook: [Mavericks_Final_Training](https://colab.research.google.com/drive/1oiuvanrteVoE3F8pCNOIdi5t8gierS_e?usp=sharing#scrollTo=9288a425) - full model training and evaluation workflow.
 - Hugging Face Space: [medical-triage-env](https://vishaltechie-medical-triage-env.hf.space) - live demo of the triage environment.
-- Blog: see Blog.MD in this repo for the write-up.
+- Blog: https://huggingface.co/spaces/VishalTechie/medical-triage-env/blob/main/Blog.MD
 ## Overview
 The agent receives structured patient presentations and must either classify urgency or request a clarifying question when additional history is needed. The benchmark emphasizes triage prioritization, clinical reasoning, and safe escalation.
 
